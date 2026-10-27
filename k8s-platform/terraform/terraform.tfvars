@@ -1,0 +1,1 @@
+ubuntu_image = "/var/lib/libvirt/images/noble-server-cloudimg-amd64.img"

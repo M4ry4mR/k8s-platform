@@ -1,0 +1,39 @@
+---
+- name: Ensure config directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/modules-load.d
+    - /etc/sysctl.d
+
+- name: Load required kernel modules now
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ k8s_kernel_modules }}"
+
+- name: Load required kernel modules on boot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k8s.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {% for m in k8s_kernel_modules %}
+      {{ m }}
+      {% endfor %}
+
+# sysctl_set applies the runtime value; sysctl_file persists it. Idempotent.
+- name: Apply and persist sysctl parameters
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value | string }}"
+    sysctl_file: "{{ sysctl_config_file }}"
+    sysctl_set: true
+    state: present
+    reload: false
+  loop: "{{ k8s_sysctl | dict2items }}"

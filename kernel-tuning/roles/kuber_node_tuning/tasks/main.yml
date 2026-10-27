@@ -1,0 +1,32 @@
+---
+- name: OS - swap, time sync, journald, login limits
+  ansible.builtin.import_tasks: os.yml
+  tags: [os]
+
+- name: Kernel - modules and sysctl
+  ansible.builtin.import_tasks: sysctl.yml
+  tags: [sysctl]
+
+- name: Services - containerd configuration and limits
+  ansible.builtin.import_tasks: containerd.yml
+  tags: [containerd]
+
+- name: Services - kubelet configuration and limits
+  ansible.builtin.import_tasks: kubelet.yml
+  tags: [kubelet]
+
+- name: Services - kubelet file-descriptor limit
+  ansible.builtin.import_tasks: limits.yml
+  tags: [limits]
+
+- name: Apply pending restarts before verifying
+  ansible.builtin.meta: flush_handlers
+# - name: Install kubectl
+#   ansible.builtin.import_tasks: kubectl.yml
+- name: Verify node state
+  ansible.builtin.import_tasks: verify.yml
+  tags: [verify]
+
+- name: Cleanup files from older role versions
+  ansible.builtin.import_tasks: cleanup.yml
+  tags: [never, cleanup]

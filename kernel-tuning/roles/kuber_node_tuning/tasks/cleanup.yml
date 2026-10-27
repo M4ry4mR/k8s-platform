@@ -1,0 +1,26 @@
+---
+ 
+
+- name: Remove legacy kubelet environment hook
+  ansible.builtin.lineinfile:
+    path: /etc/default/kubelet
+    regexp: '^KUBELET_EXTRA_ARGS=--config-dir=.*$'
+    state: absent
+  notify: Restart kubelet and wait
+
+- name: Remove legacy service limit drop-ins
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/kubelet.service.d/20-limits.conf
+    - /etc/systemd/system/containerd.service.d/20-limits.conf
+  notify:
+    - Daemon reload
+    - Restart kubelet and wait
+    - Restart containerd and wait
+
+- name: Reload systemd after cleanup
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode

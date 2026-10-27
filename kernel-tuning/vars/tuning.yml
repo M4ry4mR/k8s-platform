@@ -1,0 +1,114 @@
+---
+# Node tuning policy.
+# Keep environment-specific values here; the role itself remains reusable.
+
+# ---- kubelet sizing ----
+# kube-reserved memory: 25% of first 4 GiB, 20% to 8, 10% to 16,
+# 6% to 128, 2% above.
+tuning_kube_reserved_mem_mi: >-
+  {{ (( ([ansible_memtotal_mb | int, 4096] | min) * 0.25
+      + ([[ansible_memtotal_mb | int, 8192] | min - 4096, 0] | max) * 0.20
+      + ([[ansible_memtotal_mb | int, 16384] | min - 8192, 0] | max) * 0.10
+      + ([[ansible_memtotal_mb | int, 131072] | min - 16384, 0] | max) * 0.06
+      + ([ansible_memtotal_mb | int - 131072, 0] | max) * 0.02) | round(0, 'ceil')) | int }}
+
+# kube-reserved CPU in millicores.
+tuning_kube_reserved_cpu_m: >-
+  {{ (( ([ansible_processor_vcpus | int, 1] | min) * 60
+      + ([[ansible_processor_vcpus | int, 2] | min - 1, 0] | max) * 10
+      + ([[ansible_processor_vcpus | int, 4] | min - 2, 0] | max) * 5
+      + ([ansible_processor_vcpus | int - 4, 0] | max) * 2.5) | round(0, 'ceil')) | int }}
+
+tuning_system_reserved_mem_mi: 256
+tuning_system_reserved_cpu_m: 100
+tuning_evict_hard_mem_mi: 200
+tuning_avg_pod_mem_mi: 64
+
+kubelet_max_pods_cap: 110
+kubelet_min_pods: 20
+kubelet_pod_pids_limit: 4096
+
+# ---- kubelet behavior ----
+kubelet_image_gc_high_threshold: 75
+kubelet_image_gc_low_threshold: 65
+kubelet_logfiles_max_nr: 3
+kubelet_logfiles_max_size: 10Mi
+
+kubelet_protect_kernel_defaults: true
+kubelet_fail_swap_on: true
+kubelet_shutdown_grace_period: 60s
+kubelet_shutdown_grace_period_critical_pods: 20s
+
+kubelet_eviction_hard:
+  memory.available: "{{ tuning_evict_hard_mem_mi }}Mi"
+  nodefs.available: 10%
+  nodefs.inodesFree: 5%
+  imagefs.available: 15%
+  imagefs.inodesFree: 5%
+  pid.available: 10%
+
+kubelet_eviction_soft:
+  memory.available: 500Mi
+  nodefs.available: 15%
+  imagefs.available: 20%
+
+kubelet_eviction_soft_grace_period:
+  memory.available: 1m30s
+  nodefs.available: 2m
+  imagefs.available: 2m
+
+kubelet_eviction_max_pod_grace_period: 30
+kubelet_kernel_memcg_notification: true
+kubelet_image_minimum_gc_age: 2m
+kubelet_image_maximum_gc_age: 168h
+
+# ---- containerd ----
+containerd_version: "2.3.7"
+containerd_nofile: 1048576
+pause_image: "registry.k8s.io/pause:3.10"
+
+# ---- OS ----
+chrony_servers: []
+journald_max_use: 500M
+journald_keep_free: 1G
+journald_retention: 7day
+
+# ---- file descriptor limits ----
+kubelet_nofile: 1000000
+
+# ---- kernel ----
+sysctl_config_file: /etc/sysctl.d/90-k8s-tuning.conf
+
+k8s_kernel_modules:
+  - overlay
+  - br_netfilter
+  - nf_conntrack
+
+k8s_sysctl:
+  net.ipv4.ip_forward: 1
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.tcp_syncookies: 1
+  net.core.somaxconn: 4096
+  net.ipv4.tcp_max_syn_backlog: 8192
+  net.ipv4.ip_local_port_range: "32768 65535"
+  net.ipv4.tcp_keepalive_time: 600
+  net.ipv4.tcp_keepalive_intvl: 30
+  net.ipv4.tcp_keepalive_probes: 5
+  net.netfilter.nf_conntrack_max: 131072
+  net.ipv4.neigh.default.gc_thresh1: 4096
+  net.ipv4.neigh.default.gc_thresh2: 8192
+  net.ipv4.neigh.default.gc_thresh3: 16384
+  fs.file-max: 2097152
+  fs.nr_open: 1048576
+  fs.inotify.max_user_instances: 8192
+  fs.inotify.max_user_watches: 262144
+  vm.max_map_count: 262144
+  vm.overcommit_memory: 1
+  vm.panic_on_oom: 0
+  kernel.panic: 10
+  kernel.panic_on_oops: 1
+  kernel.keys.root_maxkeys: 1000000
+  kernel.keys.root_maxbytes: 25000000

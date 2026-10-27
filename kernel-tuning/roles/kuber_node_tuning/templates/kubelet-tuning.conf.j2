@@ -1,0 +1,51 @@
+# {{ ansible_managed }}
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+failSwapOn: {{ kubelet_fail_swap_on | bool | lower }}
+protectKernelDefaults: {{ kubelet_protect_kernel_defaults | bool | lower }}
+maxPods: {{ kubelet_max_pods | int }}
+podPidsLimit: {{ kubelet_pod_pids_limit | int }}
+
+kubeReserved:
+  cpu: "{{ kubelet_kube_reserved_cpu_m | int }}m"
+  memory: "{{ kubelet_kube_reserved_mem_mi | int }}Mi"
+  ephemeral-storage: "1Gi"
+
+systemReserved:
+  cpu: "{{ tuning_system_reserved_cpu_m | int }}m"
+  memory: "{{ tuning_system_reserved_mem_mi | int }}Mi"
+  ephemeral-storage: "1Gi"
+
+enforceNodeAllocatable:
+  - pods
+
+kernelMemcgNotification: {{ kubelet_kernel_memcg_notification | bool | lower }}
+
+evictionHard:
+{% for key, value in kubelet_eviction_hard.items() %}
+  {{ key }}: "{{ value }}"
+{% endfor %}
+
+evictionSoft:
+{% for key, value in kubelet_eviction_soft.items() %}
+  {{ key }}: "{{ value }}"
+{% endfor %}
+
+evictionSoftGracePeriod:
+{% for key, value in kubelet_eviction_soft_grace_period.items() %}
+  {{ key }}: "{{ value }}"
+{% endfor %}
+
+evictionMaxPodGracePeriod: {{ kubelet_eviction_max_pod_grace_period | int }}
+
+imageGCHighThresholdPercent: {{ kubelet_image_gc_high_threshold | int }}
+imageGCLowThresholdPercent: {{ kubelet_image_gc_low_threshold | int }}
+imageMinimumGCAge: {{ kubelet_image_minimum_gc_age }}
+imageMaximumGCAge: {{ kubelet_image_maximum_gc_age }}
+
+containerLogMaxSize: {{ kubelet_logfiles_max_size }}
+containerLogMaxFiles: {{ kubelet_logfiles_max_nr | int }}
+
+shutdownGracePeriod: {{ kubelet_shutdown_grace_period }}
+shutdownGracePeriodCriticalPods: {{ kubelet_shutdown_grace_period_critical_pods }}

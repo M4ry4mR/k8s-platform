@@ -1,0 +1,13 @@
+---
+- name: Kubernetes node tuning
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  serial: 1
+  force_handlers: true
+
+  vars_files:
+    - ../vars/tuning.yml
+
+  roles:
+    - kuber_node_tuning

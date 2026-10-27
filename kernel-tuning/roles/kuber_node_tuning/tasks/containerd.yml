@@ -1,0 +1,75 @@
+---
+- name: Require containerd_version
+  ansible.builtin.assert:
+    that: containerd_version | length > 0
+    fail_msg: "Set containerd_version to the exact installed version (see containerd --version)."
+
+- name: Read installed containerd version
+  ansible.builtin.command: containerd --version
+  register: containerd_ver
+  changed_when: false
+  check_mode: false
+
+- name: Assert installed containerd version matches
+  ansible.builtin.assert:
+    that: containerd_version in containerd_ver.stdout
+    fail_msg: "Installed: {{ containerd_ver.stdout }}; expected: {{ containerd_version }}"
+
+# - name: Hold containerd package
+#   ansible.builtin.dpkg_selections:
+#     name: containerd.io
+#     selection: hold
+#   when: ansible_os_family == 'Debian'
+
+- name: Ensure containerd and systemd drop-in directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/containerd
+    - /etc/containerd/conf.d
+    - /etc/systemd/system/containerd.service.d
+    - /etc/systemd/system/kubelet.service.d
+
+- name: Render containerd configuration
+  ansible.builtin.template:
+    src: containerd-config.toml.j2
+    dest: "{{ containerd_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  vars:
+    containerd_major: "{{ containerd_version.split('.')[0] | int }}"
+  notify: Restart containerd and wait
+
+- name: Set containerd file-descriptor limit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/containerd.service.d/20-limits.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Service]
+      LimitNOFILE={{ containerd_nofile }}
+      TasksMax=infinity
+  notify: [Daemon reload, Restart containerd and wait]
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Read running open-files limit of containerd
+  ansible.builtin.shell: |
+    pid=$(systemctl show -p MainPID --value containerd)
+    [ "$pid" != "0" ] && awk '/Max open files/ {print $4}' /proc/$pid/limits || echo none
+  args:
+    executable: /bin/bash
+  register: running_containerd_nofile
+  changed_when: running_containerd_nofile.stdout | trim != containerd_nofile | string
+  check_mode: false
+  notify: Restart containerd and wait

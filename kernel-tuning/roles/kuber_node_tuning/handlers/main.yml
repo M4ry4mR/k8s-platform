@@ -1,0 +1,42 @@
+---
+- name: Restart chrony
+  ansible.builtin.systemd_service:
+    name: "{{ chrony_service }}"
+    state: restarted
+  when: not ansible_check_mode
+
+- name: Restart journald
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted
+  when: not ansible_check_mode
+
+- name: Daemon reload
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Restart containerd
+  ansible.builtin.systemd_service:
+    name: containerd
+    state: restarted
+  when: not ansible_check_mode
+  listen: Restart containerd and wait
+
+- name: Restart kubelet
+  ansible.builtin.systemd_service:
+    name: kubelet
+    state: restarted
+  when: not ansible_check_mode
+  listen: Restart kubelet and wait
+
+- name: Wait for node Ready
+  ansible.builtin.command: >-
+    {{ kubectl_bin }} --kubeconfig {{ admin_kubeconfig }}
+    wait --for=condition=Ready node/{{ k8s_node_name }} --timeout=180s
+  delegate_to: "{{ groups[control_plane_group][0] }}"
+  changed_when: false
+  when: not ansible_check_mode
+  listen:
+    - Restart kubelet and wait
+    - Restart containerd and wait

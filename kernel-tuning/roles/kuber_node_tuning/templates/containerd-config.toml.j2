@@ -1,0 +1,24 @@
+# {{ ansible_managed }}  (put registry mirrors etc. in /etc/containerd/conf.d/*.toml)
+{% if containerd_major | int >= 2 %}
+version = 3
+imports = ["/etc/containerd/conf.d/*.toml"]
+
+[plugins.'io.containerd.cri.v1.images'.pinned_images]
+  sandbox = '{{ pause_image }}'
+
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]
+  runtime_type = 'io.containerd.runc.v2'
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
+  SystemdCgroup = true
+{% else %}
+version = 2
+imports = ["/etc/containerd/conf.d/*.toml"]
+
+[plugins."io.containerd.grpc.v1.cri"]
+  sandbox_image = "{{ pause_image }}"
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+  SystemdCgroup = true
+{% endif %}

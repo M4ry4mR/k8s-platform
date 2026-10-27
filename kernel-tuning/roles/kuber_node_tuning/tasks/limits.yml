@@ -1,0 +1,42 @@
+---
+- name: Ensure kubelet service drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/kubelet.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Set kubelet file-descriptor limit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/kubelet.service.d/90-k8s-limits.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Service]
+      LimitNOFILE={{ kubelet_nofile }}
+      TasksMax=infinity
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Assert kubelet drop-in is loaded
+  ansible.builtin.command: systemctl show kubelet -p DropInPaths --value
+  register: kubelet_dropins
+  changed_when: false
+  check_mode: false
+  failed_when: not ansible_check_mode and '90-k8s-limits.conf' not in kubelet_dropins.stdout
+
+- name: Compare running kubelet open-files limit with desired
+  ansible.builtin.shell: |
+    pid=$(systemctl show -p MainPID --value kubelet)
+    [ "$pid" != "0" ] && awk '/Max open files/ {print $4}' /proc/$pid/limits || echo none
+  args:
+    executable: /bin/bash
+  register: kubelet_running_nofile
+  changed_when: kubelet_running_nofile.stdout | trim != kubelet_nofile | string
+  check_mode: false
+  notify: Restart kubelet and wait

@@ -1,0 +1,26 @@
+---
+- name: Read installed kubelet version
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/kubelet
+      - --version
+  register: kubelet_version_output
+  changed_when: false
+
+- name: Set kubectl version to match kubelet
+  ansible.builtin.set_fact:
+    kubectl_version: "{{ kubelet_version_output.stdout.split()[-1] }}"
+
+- name: Check whether kubectl is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/kubectl
+  register: kubectl_binary
+
+- name: Download kubectl matching kubelet version
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    owner: root
+    group: root
+    mode: "0755"
+  when: not kubectl_binary.stat.exists

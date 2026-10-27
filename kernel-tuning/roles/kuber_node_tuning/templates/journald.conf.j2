@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[Journal]
+Storage=persistent
+Compress=yes
+SystemMaxUse={{ journald_max_use }}
+SystemKeepFree={{ journald_keep_free }}
+MaxRetentionSec={{ journald_retention }}
+RateLimitIntervalSec=30s
+RateLimitBurst=10000

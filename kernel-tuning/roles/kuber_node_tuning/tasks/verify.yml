@@ -1,0 +1,124 @@
+---
+- name: Validate required tuning variables
+  ansible.builtin.assert:
+    that:
+      - kubelet_max_pods_cap is defined
+      - kubelet_min_pods is defined
+      - kubelet_pod_pids_limit is defined
+      - kubelet_nofile is defined
+      - containerd_nofile is defined
+      - kubelet_eviction_hard is defined
+      - kubelet_eviction_soft is defined
+      - kubelet_logfiles_max_nr is defined
+      - kubelet_image_gc_high_threshold is defined
+    fail_msg: "Node tuning variables are not loaded. Check vars/tuning.yml."
+    quiet: true
+
+- name: Read runtime sysctl values
+  ansible.builtin.command: "sysctl -n {{ item.key }}"
+  loop: "{{ k8s_sysctl | dict2items }}"
+  register: sysctl_runtime
+  changed_when: false
+  check_mode: false
+
+- name: Assert sysctl values match
+  ansible.builtin.assert:
+    that: (item.stdout | regex_replace('\s+', ' ') | trim) == (item.item.value | string)
+    fail_msg: "{{ item.item.key }}: expected {{ item.item.value }}, got {{ item.stdout }}"
+    quiet: true
+  loop: "{{ sysctl_runtime.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: Swap is off
+  ansible.builtin.command: swapon --show --noheadings
+  register: swap_out
+  changed_when: false
+  check_mode: false
+  failed_when: swap_out.stdout | length > 0
+
+- name: Wait for clock sync
+  ansible.builtin.command: chronyc waitsync 12 1.0
+  changed_when: false
+  check_mode: false
+
+- name: Clock is synchronised
+  ansible.builtin.command: chronyc tracking
+  register: chrony_out
+  changed_when: false
+  check_mode: false
+  failed_when: chrony_out.stdout is not search('Leap status\s+:\s+Normal')
+
+- name: Read containerd effective configuration
+  ansible.builtin.command: containerd config dump
+  register: containerd_dump
+  changed_when: false
+  check_mode: false
+  failed_when: "'SystemdCgroup = true' not in containerd_dump.stdout"
+
+- name: Check running open-files limits
+  ansible.builtin.shell: |
+    awk '/Max open files/ {print $4}' /proc/$(systemctl show -p MainPID --value {{ item.unit }})/limits
+  args:
+    executable: /bin/bash
+  loop:
+    - { unit: containerd, nofile: "{{ containerd_nofile }}" }
+    - { unit: kubelet, nofile: "{{ kubelet_nofile }}" }
+  loop_control:
+    label: "{{ item.unit }}"
+  register: nofile_out
+  changed_when: false
+  check_mode: false
+  failed_when: nofile_out.stdout | trim != item.nofile | string
+
+- name: Read effective kubelet configuration
+  ansible.builtin.command: >-
+    {{ kubectl_bin }} --kubeconfig {{ admin_kubeconfig }}
+    get --raw /api/v1/nodes/{{ k8s_node_name }}/proxy/configz
+  delegate_to: "{{ groups[control_plane_group][0] }}"
+  register: configz
+  changed_when: false
+  check_mode: false
+
+- name: Parse kubelet configuration
+  ansible.builtin.set_fact:
+    kubelet_cfg: "{{ (configz.stdout | from_json).kubeletconfig }}"
+
+- name: Assert kubelet effective settings
+  ansible.builtin.assert:
+    that:
+      - kubelet_cfg.protectKernelDefaults | bool == kubelet_protect_kernel_defaults | bool
+      - kubelet_cfg.cgroupDriver == 'systemd'
+      - kubelet_cfg.failSwapOn | bool == kubelet_fail_swap_on | bool
+      - kubelet_cfg.maxPods == (kubelet_max_pods | int)
+      - kubelet_cfg.podPidsLimit == (kubelet_pod_pids_limit | int)
+      - kubelet_cfg.kubeReserved.cpu == (kubelet_kube_reserved_cpu_m | int | string) ~ 'm'
+      - kubelet_cfg.kubeReserved.memory == (kubelet_kube_reserved_mem_mi | int | string) ~ 'Mi'
+      - kubelet_cfg.systemReserved.cpu == (tuning_system_reserved_cpu_m | int | string) ~ 'm'
+      - kubelet_cfg.systemReserved.memory == (tuning_system_reserved_mem_mi | int | string) ~ 'Mi'
+      - kubelet_cfg.evictionHard['memory.available'] == kubelet_eviction_hard['memory.available']
+      - kubelet_cfg.evictionHard['nodefs.available'] == kubelet_eviction_hard['nodefs.available']
+      - kubelet_cfg.evictionSoft['memory.available'] == kubelet_eviction_soft['memory.available']
+      - kubelet_cfg.containerLogMaxFiles == (kubelet_logfiles_max_nr | int)
+      - kubelet_cfg.containerLogMaxSize == kubelet_logfiles_max_size
+      - kubelet_cfg.imageGCHighThresholdPercent == (kubelet_image_gc_high_threshold | int)
+      - kubelet_cfg.imageGCLowThresholdPercent == (kubelet_image_gc_low_threshold | int)
+    quiet: true
+    fail_msg: "The running kubelet is not using the node-tuning configuration."
+
+- name: Verify Kubernetes node is Ready
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/kubectl
+      - --kubeconfig
+      - /etc/kubernetes/admin.conf
+      - get
+      - node
+      - "{{ inventory_hostname }}"
+      - -o
+      - 'jsonpath={.status.conditions[?(@.type=="Ready")].status}'
+  delegate_to: "{{ groups['kube_control_plane'][0] }}"
+  become: true
+  register: node_ready
+  changed_when: false
+  failed_when: node_ready.stdout | trim != "True"

@@ -1,0 +1,16 @@
+controller:
+  kind: DaemonSet
+  hostNetwork: false
+  hostPort:
+    enabled: true
+    ports:
+      http: 80
+      https: 443
+  service:
+    type: ClusterIP
+  ingressClassResource:
+    name: nginx
+    default: true
+  watchIngressWithoutClass: true
+  config:
+    allow-snippet-annotations: "false"

@@ -1,0 +1,72 @@
+---
+# Generic defaults for the node-tuning role.
+# Environment-specific policy belongs in vars/tuning.yml.
+
+control_plane_group: kube_control_plane
+k8s_node_name: "{{ inventory_hostname }}"
+kubelet_config_file: /etc/kubernetes/kubelet-config.yaml
+kubectl_bin: /usr/local/bin/kubectl
+admin_kubeconfig: /etc/kubernetes/admin.conf
+
+# kubelet defaults
+kubelet_max_pods_cap: 110
+kubelet_min_pods: 20
+kubelet_pod_pids_limit: 4096
+kubelet_protect_kernel_defaults: true
+kubelet_fail_swap_on: true
+kubelet_shutdown_grace_period: 60s
+kubelet_shutdown_grace_period_critical_pods: 20s
+kubelet_image_gc_high_threshold: 75
+kubelet_image_gc_low_threshold: 65
+kubelet_logfiles_max_nr: 3
+kubelet_logfiles_max_size: 10Mi
+
+kubelet_kernel_memcg_notification: true
+kubelet_eviction_hard:
+  memory.available: 200Mi
+  nodefs.available: 10%
+  nodefs.inodesFree: 5%
+  imagefs.available: 15%
+  imagefs.inodesFree: 5%
+  pid.available: 10%
+kubelet_eviction_soft:
+  memory.available: 500Mi
+  nodefs.available: 15%
+  imagefs.available: 20%
+kubelet_eviction_soft_grace_period:
+  memory.available: 1m30s
+  nodefs.available: 2m
+  imagefs.available: 2m
+kubelet_eviction_max_pod_grace_period: 30
+kubelet_image_minimum_gc_age: 2m
+kubelet_image_maximum_gc_age: 168h
+
+tuning_system_reserved_mem_mi: 256
+tuning_system_reserved_cpu_m: 100
+tuning_evict_hard_mem_mi: 200
+tuning_avg_pod_mem_mi: 64
+tuning_kube_reserved_mem_mi: 0
+tuning_kube_reserved_cpu_m: 0
+
+# containerd
+containerd_nofile: 1048576
+containerd_version: "2.3.7"
+pause_image: "registry.k8s.io/pause:3.10"
+
+# OS
+chrony_servers: []
+journald_max_use: 500M
+journald_keep_free: 1G
+journald_retention: 7day
+
+# file descriptor limits
+kubelet_nofile: 1000000
+containerd_config_file: /etc/containerd/config.toml
+
+# kernel
+sysctl_config_file: /etc/sysctl.d/90-k8s-tuning.conf
+k8s_kernel_modules:
+  - overlay
+  - br_netfilter
+  - nf_conntrack
+k8s_sysctl: {}

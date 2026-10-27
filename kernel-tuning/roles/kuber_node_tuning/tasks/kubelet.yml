@@ -1,0 +1,91 @@
+---
+- name: Read kubelet version
+  ansible.builtin.command: /usr/local/bin/kubelet --version
+  register: kubelet_ver
+  changed_when: false
+  check_mode: false
+
+- name: Assert kubelet version is supported
+  ansible.builtin.assert:
+    that:
+      - (kubelet_ver.stdout.split()[1] | regex_replace('^v', '')) is version('1.30', '>=')
+    fail_msg: "This role requires kubelet 1.30 or newer."
+
+- name: Compute kube-reserved memory from node size
+  ansible.builtin.set_fact:
+    kubelet_kube_reserved_mem_mi: "{{ tuning_kube_reserved_mem_mi | int }}"
+
+- name: Compute kube-reserved CPU from node size
+  ansible.builtin.set_fact:
+    kubelet_kube_reserved_cpu_m: "{{ tuning_kube_reserved_cpu_m | int }}"
+
+- name: Compute maxPods from remaining allocatable memory
+  ansible.builtin.set_fact:
+    kubelet_max_pods: >-
+      {{ [
+           kubelet_max_pods_cap | int,
+           [
+             kubelet_min_pods | int,
+             (
+               (
+                 ansible_memtotal_mb | int
+                 - kubelet_kube_reserved_mem_mi | int
+                 - tuning_system_reserved_mem_mi | int
+                 - tuning_evict_hard_mem_mi | int
+               ) / (tuning_avg_pod_mem_mi | int)
+             ) | int
+           ] | max
+         ] | min }}
+
+- name: Read active kubelet configuration
+  ansible.builtin.slurp:
+    src: "{{ kubelet_config_file }}"
+  register: kubelet_active_config_raw
+
+- name: Parse active kubelet configuration
+  ansible.builtin.set_fact:
+    kubelet_active_config: >-
+      {{ kubelet_active_config_raw.content | b64decode | from_yaml }}
+
+- name: Render kubelet tuning configuration
+  ansible.builtin.set_fact:
+    kubelet_tuning_config: >-
+      {{ lookup('template', 'kubelet-tuning.conf.j2') | from_yaml }}
+
+- name: Merge tuning settings into active kubelet configuration
+  ansible.builtin.set_fact:
+    kubelet_merged_config: >-
+      {{
+        kubelet_active_config
+        | ansible.builtin.combine(
+            kubelet_tuning_config,
+            recursive=true
+          )
+      }}
+
+- name: Validate merged kubelet configuration structure
+  ansible.builtin.assert:
+    that:
+      - kubelet_merged_config.apiVersion == 'kubelet.config.k8s.io/v1beta1'
+      - kubelet_merged_config.kind == 'KubeletConfiguration'
+      - kubelet_merged_config.maxPods | int == kubelet_max_pods | int
+    fail_msg: "The merged kubelet configuration failed validation."
+
+- name: Back up active kubelet configuration
+  ansible.builtin.copy:
+    src: "{{ kubelet_config_file }}"
+    dest: "{{ kubelet_config_file }}.pre-tuning"
+    remote_src: true
+    force: false
+    mode: preserve
+
+- name: Write merged kubelet configuration
+  ansible.builtin.copy:
+    content: "{{ kubelet_merged_config | ansible.builtin.to_nice_yaml }}"
+    dest: "{{ kubelet_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  register: kubelet_config_write
+  notify: Restart kubelet and wait
